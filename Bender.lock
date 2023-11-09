@@ -15,10 +15,10 @@ packages:
     - apb
     - register_interface
   axi:
-    revision: fccffb5953ec8564218ba05e20adbedec845e014
-    version: 0.39.1
+    revision: 4fb5a02ef5c96396ac2157bcaf09bb6a05b6a87d
+    version: null
     source:
-      Git: https://github.com/pulp-platform/axi.git
+      Git: https://github.com/pulp-platform/axi
     dependencies:
     - common_cells
     - common_verification
@@ -27,7 +27,7 @@ packages:
     revision: 7d7fc1349d4915a657de535a491bc26fbf0d2cfa
     version: null
     source:
-      Git: https://github.com/pulp-platform/axi_llc.git
+      Git: https://github.com/pulp-platform/axi_llc
     dependencies:
     - axi
     - common_cells
@@ -35,8 +35,8 @@ packages:
     - register_interface
     - tech_cells_generic
   axi_riscv_atomics:
-    revision: c3c3f2b65071841035c4e081c61c9b7be801d749
-    version: 0.8.1
+    revision: 0ac3a78fe342c5a5b9b10bff49d58897f773059e
+    version: 0.8.2
     source:
       Git: https://github.com/pulp-platform/axi_riscv_atomics.git
     dependencies:
@@ -92,10 +92,10 @@ packages:
       Git: https://github.com/pulp-platform/common_verification.git
     dependencies: []
   cva6:
-    revision: ec242579ea25a1f6bef7235591814dd1e475f90c
+    revision: a3226ad3de441e168df2162928a223e0d195d402
     version: null
     source:
-      Git: https://github.com/pulp-platform/cva6.git
+      Git: https://github.com/creinwar/cva6.git
     dependencies:
     - axi
     - common_cells
