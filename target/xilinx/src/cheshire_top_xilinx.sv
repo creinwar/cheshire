@@ -127,8 +127,8 @@ module cheshire_top_xilinx
     LlcCachePartition : 0,
     LlcMaxPartition   : 0,
     LlcRemapHash      : axi_llc_pkg::Modulo,
-    LlcUserAmoMsb     : 0,
-    LlcUserAmoLsb     : 0,
+    LlcUserMsb        : 0,
+    LlcUserLsb        : 0,
     // VGA: RGB332
     VgaRedWidth       : 5,
     VgaGreenWidth     : 6,
