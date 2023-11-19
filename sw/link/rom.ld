@@ -22,9 +22,12 @@ SECTIONS {
     *(.srodata.*)
     *(.sdata)
     *(.sdata.*)
+  } > spm AT>extrom
+
+  .bulk : {
     *(.bulk)
     *(.bulk.*)
-  } > spm AT>extrom
+  } > dram
 
   /* BSS is not loaded, but initialized by CRT0 */
   . = ALIGN(32);

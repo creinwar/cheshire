@@ -40,5 +40,5 @@ SECTIONS {
   .bulk : ALIGN(16) {
     *(.bulk)
     *(.bulk.*)
-  } > spm
+  } > dram
 }
