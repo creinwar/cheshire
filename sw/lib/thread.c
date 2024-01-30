@@ -6,13 +6,19 @@
 #include "dif/clint.h"
 #include "thread.h"
 #include "rv64.h"
+#include "printf.h"
 
 #define ENABLE_HPMCOUNTER_TRACE 1
+//#define ENABLE_TRACE_PRINT 1
 
 extern void rv64_thread_kickoff(void);
 
+// Sim
 #define THREAD_TICKLEN      5
 
+// FPGA
+//#define THREAD_TICKLEN        5*(31*4)  // The FPGA clint ticks 31 times as fast
+                                        // and the core clock is 4x slower
 thread_t *cur_thread = NULL;
 thread_t *queue = NULL;
 
@@ -52,9 +58,18 @@ int thread_create(thread_t *t, void *entry, void *sp,
         st->csrs.raw[i] = 0;
     }
 
+    // The new threads inherit our current global pointer
+    uint64_t gp = 0;
+    __asm volatile(
+        "addi %0, gp, 0\n"
+        : "=r"(gp)
+        ::
+    );
+
     st->regs.x.pc  = (unsigned long int) entry;
     st->regs.x.x1  = (unsigned long int) thread_exit;
     st->regs.x.x2  = (unsigned long int) sp;
+    st->regs.x.x3  = gp;
     st->regs.x.x10 = arg0;
     st->regs.x.x11 = arg1;
 
@@ -202,6 +217,20 @@ void thread_set_timer(void)
     return;
 }
 
+void thread_dump_mstate(void)
+{
+    uint64_t mcause, mepc, mip, mie, mstatus, mtval;
+    asm volatile("csrr %0, mcause; csrr %1, mepc; csrr %2, mip;"
+                 "csrr %3, mie; csrr %4, mstatus; csrr %5, mtval"
+                 : "=r"(mcause), "=r"(mepc), "=r"(mip), "=r"(mie), "=r"(mstatus), "=r"(mtval));
+    printf("\r\n==== ctxt switch trace ====\r\n"
+           " mcause:     0x%016x\r\n mepc:       0x%016x\r\n mip:        0x%016x\r\n"
+           " mie:        0x%016x\r\n mstatus:    0x%016x\r\n mtval:      0x%016x\r\n"
+           "================================\r\n",
+           mcause, mepc, mip, mie, mstatus, mtval);
+}
+
+
 void thread_trace(void)
 {
 #ifdef ENABLE_HPMCOUNTER_TRACE
@@ -213,8 +242,53 @@ void thread_trace(void)
     );
 
     cur_thread->dtlb_misses += incr;
-    return;
 #endif
+
+#ifdef ENABLE_TRACE_PRINT
+    thread_dump_mstate();
+#endif
+
+    /*uint64_t data_ptes[16], instr_ptes[16];
+    uint64_t data_flags[16], instr_flags[16];
+
+    for(int i = 0; i < 16; i++){
+        uint64_t cur_data_pte = 0, cur_instr_pte = 0;
+        uint64_t cur_data_flags = 0, cur_instr_flags = 0;
+
+        __asm volatile(
+            "csrrw x0, 0x801, %4\n      \
+             csrrw x0, 0x802, %4\n      \
+             csrrs %0, 0x803, x0\n      \
+             csrrs %1, 0x804, x0\n      \
+             csrrs %2, 0x805, x0\n      \
+             csrrs %3, 0x806, x0\n"
+             : "=r"(cur_data_pte), "=r"(cur_instr_pte), "=r"(cur_data_flags), "=r"(cur_instr_flags)
+             : "r"(i)
+             :
+        );
+        data_ptes[i]    = cur_data_pte;
+        data_flags[i]   = cur_data_flags;
+        instr_ptes[i]   = cur_instr_pte;
+        instr_flags[i]  = cur_instr_flags;
+    }
+
+    for(int i = 0; i < 16; i++){
+        (void) data_flags[i];
+        (void) data_ptes[i];
+        (void) instr_flags[i];
+        (void) instr_ptes[i];
+    }
+
+    //for(int i = 0; i < 16; i++){
+    //    printf("Data TLB entry %d: pte = 0x%016lx, flags = 0x%016lx\r\n", i, data_ptes[i], data_flags[i]);
+    //}
+
+    //for(int i = 0; i < 16; i++){
+    //    printf("Instr TLB entry %d: pte = 0x%016lx, flags = 0x%016lx\r\n", i, instr_ptes[i], instr_flags[i]);
+    //}
+    */
+
+    return;
 }
 
 #endif

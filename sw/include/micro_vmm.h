@@ -24,5 +24,6 @@ int vm_dequeue(vm_t *q, unsigned int vmid);
 void vm_kickoff(vm_t *q);
 void vm_set_timer(void);
 void vm_trace(void);
+void vm_handle_guest_fault(void *sp);
 
 #endif

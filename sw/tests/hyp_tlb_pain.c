@@ -33,11 +33,19 @@ static sv39_pte_u __attribute__((aligned(4096), section(".bulk"))) vspace_v_vm2_
 
 void page_toucher(unsigned long int *base, unsigned long int num_pages)
 {
+    //char *msg_tx = (char *) 0x100000000;
+    //char *msg_rx = (char *) 0x100000008;
+
     // Touch num_pages 4k pages in order, starting at base
     for(int iter = 0; iter < 1000; iter++){
         for(unsigned long int i = 0; i < num_pages; i++){
             base[i*512] = (unsigned long int) base;
         }
+        //*msg_tx = (char) iter;
+        
+        //__asm volatile("fence" ::: "memory");
+
+        //base[(num_pages-1)*512] = (unsigned long int) *msg_rx;
     }
 }
 
@@ -46,22 +54,21 @@ void wait_two_vms(uint32_t *dtlb_misses_vm1, uint32_t *dtlb_misses_vm2)
     char vm1_done = 0, vm2_done = 0;
     while(!vm1_done || !vm2_done){
 
-        //__asm volatile ("wfi\n" :::);
-
         if(dtlb_misses_vm1 && *dtlb_misses_vm1 && !vm1_done){
             vm1_done = 1;
-            printf("First VM DTLB misses: %lu\n", *dtlb_misses_vm1 >> 1);
+            printf("[-->] First VM DTLB misses: %lu\r\n", *dtlb_misses_vm1 >> 1);
         }
 
         if(dtlb_misses_vm2 && *dtlb_misses_vm2 && !vm2_done){
             vm2_done = 1;
-            printf("Second VM DTLB misses: %lu\n", *dtlb_misses_vm2 >> 1);
+            printf("[-->] Second VM DTLB misses: %lu\r\n", *dtlb_misses_vm2 >> 1);
         }
     }
 
+    printf("[*] Done\r\n");
+
     *scr2 = 1;
     while(1){
-        //__asm volatile("wfi\n" :::);
     }
 }
 
@@ -72,6 +79,10 @@ int main(void)
     uint32_t rtc_freq = *reg32(&__base_regs, CHESHIRE_RTC_FREQ_REG_OFFSET);
     uint64_t reset_freq = clint_get_core_freq(rtc_freq, 2500);
     uart_init(&__base_uart, reset_freq, 115200);
+
+    //printf("---- Virtual Machine Switcher ----\r\n");
+    //printf("[*] UART initialized\r\n");
+    //printf("[*] RTC freq: %u, Core freq: %lu\r\n", rtc_freq, reset_freq);
 
     // First zero both g stage vspaces
     for(int i = 0; i < 2048; i++){
@@ -131,6 +142,29 @@ int main(void)
     }
 
     /// LVL 2 -> LVL 1 --------
+    // Message virtual devices mapped at 0x1'0000'0000
+    vspace_v_vm1_L2[4].pte.ppn2 = 4;
+    vspace_v_vm1_L2[4].pte.ppn1 = 0;
+    vspace_v_vm1_L2[4].pte.ppn0 = 0;
+    vspace_v_vm1_L2[4].pte.v = 1;
+    vspace_v_vm1_L2[4].pte.r = 1;
+    vspace_v_vm1_L2[4].pte.w = 1;
+    vspace_v_vm1_L2[4].pte.x = 0;
+    vspace_v_vm1_L2[4].pte.a = 1;
+    vspace_v_vm1_L2[4].pte.d = 1;
+    vspace_v_vm1_L2[4].pte.u = 1;
+
+    vspace_v_vm2_L2[4].pte.ppn2 = 4;
+    vspace_v_vm2_L2[4].pte.ppn1 = 0;
+    vspace_v_vm2_L2[4].pte.ppn0 = 0;
+    vspace_v_vm2_L2[4].pte.v = 1;
+    vspace_v_vm2_L2[4].pte.r = 1;
+    vspace_v_vm2_L2[4].pte.w = 1;
+    vspace_v_vm2_L2[4].pte.x = 0;
+    vspace_v_vm2_L2[4].pte.a = 1;
+    vspace_v_vm2_L2[4].pte.d = 1;
+    vspace_v_vm2_L2[4].pte.u = 1;
+
     vspace_v_vm1_L2[10].pte.ppn2 = ((unsigned long int) vspace_v_vm1_L1) >> (12 + 9 + 9);
     vspace_v_vm1_L2[10].pte.ppn1 = ((unsigned long int) vspace_v_vm1_L1) >> (12 + 9);
     vspace_v_vm1_L2[10].pte.ppn0 = ((unsigned long int) vspace_v_vm1_L1) >> 12;
@@ -177,15 +211,17 @@ int main(void)
         vspace_v_vm1_L0[i].pte.v = 1;
     }
 
+    //printf("[*] Page tables initialized\r\n");
+
     // Task 1 gets the memory identity mapped for the code and a giga-page for data accesses
     vm_create(&vm1, 1UL << 7, (2UL << 13),
                     0xA1, 0xA1, 0xFFFF, (void *) vspace_g_vm1_L2, (void *) vspace_v_vm1_L2,
-                    (void *) page_toucher, (void *) (vm1_stack + 4096), 0x280000000, 32);
+                    (void *) page_toucher, (void *) (vm1_stack + 4096), 0x280000000, 64);
 
     // Task 2 gets the same identity map, but 2M in 4k pages for data accesses
     vm_create(&vm2, 1UL << 7, (2UL << 13),
                     0xB2, 0xB2, 0xFFFF, (void *) vspace_g_vm2_L2, (void *) vspace_v_vm2_L2,
-                    (void *) page_toucher, (void *) (vm2_stack + 4096), 0x3c0000000, 32);
+                    (void *) page_toucher, (void *) (vm2_stack + 4096), 0x3c0000000, 64);
 
     // VM 3 polls two addresses and if they've been written prints them as DTLB misses
     vm_create(&vm3, 1UL << 7, 2UL << 13,
@@ -199,6 +235,8 @@ int main(void)
         : "=m"(((saved_state_t *) vm3.sp)->regs.x.x3)
         ::
     );
+
+    //printf("[*] Threads created\r\n");
 
     unsigned long int lock_vpn = 0, lock_id = (0xB2UL << 15) | (0xB2 << 1) | 1;
     sv39_pte_u lock_pte = {0};
@@ -218,13 +256,15 @@ int main(void)
     lock_vpn = 0x3c0000000UL | (3 << 5) | (1 << 4) | (1 << 2) | 0x2UL;
 
     // Lock giga page TLB entry (although the page table says something else)
-    __asm volatile(
-        "csrrw x0, 0x5D6, %0\n      \
-         csrrw x0, 0x5D7, %1\n      \
-         csrrw x0, 0x5D8, %2\n"
+    /*__asm volatile(
+        "csrrw x0, 0x5D8, %0\n      \
+         csrrw x0, 0x5D9, %1\n      \
+         csrrw x0, 0x5DA, %2\n"
         :: "r"(lock_pte), "r"(lock_vpn), "r"(lock_id)
         :
-    );
+    );*/
+
+    //printf("[*] PTE locked\r\n");
 
     // Both vms
     vm_enqueue(&vm1, &vm2);
@@ -232,6 +272,8 @@ int main(void)
 
     // Only vm1
     //thread_enqueue(&vm2, &vm3);
+
+    //printf("[*] Kicking off scheduler...\r\n");
 
     vm_kickoff(&vm1);
 

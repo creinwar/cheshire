@@ -6,12 +6,19 @@
 #include "dif/clint.h"
 #include "micro_vmm.h"
 #include "rv64.h"
+#include "printf.h"
 
 #define ENABLE_HPMCOUNTER_TRACE 1
+//#define ENABLE_TRACE_PRINT 1
 
 extern void rv64_vm_kickoff(void);
 
+// Sim
 #define VM_GUEST_TICKLEN      5
+
+// FPGA
+//#define VM_GUEST_TICKLEN      5*(31*4)  // The FPGA clint ticks 31 times as fast
+                                        // and the core clock is 4x slower
 
 vm_t *cur_vm = NULL;
 vm_t *vm_queue = NULL;
@@ -161,6 +168,19 @@ void vm_set_timer(void)
     return;
 }
 
+void vm_dump_mstate(void)
+{
+    uint64_t mcause, mepc, mip, mie, mstatus, mtval;
+    asm volatile("csrr %0, mcause; csrr %1, mepc; csrr %2, mip;"
+                 "csrr %3, mie; csrr %4, mstatus; csrr %5, mtval"
+                 : "=r"(mcause), "=r"(mepc), "=r"(mip), "=r"(mie), "=r"(mstatus), "=r"(mtval));
+    printf("\r\n==== ctxt switch trace ====\r\n"
+           " mcause:     0x%016x\r\n mepc:       0x%016x\r\n mip:        0x%016x\r\n"
+           " mie:        0x%016x\r\n mstatus:    0x%016x\r\n mtval:      0x%016x\r\n"
+           "================================\r\n",
+           mcause, mepc, mip, mie, mstatus, mtval);
+}
+
 void vm_trace(void)
 {
 #ifdef ENABLE_HPMCOUNTER_TRACE
@@ -176,6 +196,30 @@ void vm_trace(void)
     cur_vm->dtlb_misses += incr;
     return;
 #endif
+
+#ifdef ENABLE_TRACE_PRINT
+    vm_dump_mstate();
+#endif
+}
+
+void vm_handle_guest_fault(void *sp)
+{
+    printf("Guest fault\n");
+
+    uint64_t scause = 0, stval = 0;
+    __asm volatile(
+        "csrrs %0, scause, x0\n     \
+         csrrs %1, stval, x0\n"
+        : "=r"(scause), "=r"(stval)
+        ::
+    );
+
+    printf("scause: 0x%lx, stval: 0x%lx\n", scause, stval);
+
+    // Patch saved state to return to the instruction after the faulting one
+    // TODO, we're hardcoding a non-compressed instruction here!
+    saved_state_t *state = (saved_state_t *) sp;
+    state->regs.x.pc += 4;
 }
 
 

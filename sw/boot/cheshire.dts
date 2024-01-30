@@ -13,7 +13,10 @@
   compatible = "eth,cheshire-dev";
   model = "eth,cheshire";
   chosen {
+    console = "/soc/serial@3002000";
     stdout-path = "/soc/serial@3002000:115200";
+    linux,initrd-start = <0x84000000>;
+    linux,initrd-end = <0x85800000>;
   };
   memory@80000000 {
     device_type = "memory";
@@ -28,7 +31,7 @@
       status = "okay";
       compatible = "eth,ariane", "riscv";
       clock-frequency = <50000000>; // 50 MHz
-      riscv,isa = "rv64imafdc";
+      riscv,isa = "rv64imafdch";
       mmu-type = "riscv,sv39";
       tlb-split;
       reg = <0>;

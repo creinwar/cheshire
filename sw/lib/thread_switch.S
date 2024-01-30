@@ -271,6 +271,7 @@ fp_restored:
     mret
 
 we_dead:
+    jal ra, thread_dump_mstate
     wfi
     j we_dead
 
@@ -279,6 +280,9 @@ rv64_thread_kickoff:
     // Globally disable interrupts
     addi t0, x0, 8
     csrrc x0, mstatus, t0
+
+    // Enable S-mode access to the cycle register
+    csrrsi x0, mcounteren, 1
 
     // Enable the machine mode timer interrupt (bit 7)
     slli t0, t0, 4
@@ -300,10 +304,13 @@ rv64_thread_kickoff:
     csrrw x0, sstatus, t1
 
     // Configure mstatus to "return" to S-mode with
-    // interrupts enabled (i.e. MPIE = 1, MPP = 01)
+    // interrupts enabled (i.e. MPIE = 01, MPP = 01)
     addi t0, x0, 17
     slli t0, t0, 7
     csrrs x0, mstatus, t0
+    addi t0, x0, 1
+    slli t0, t0, 12
+    csrrc x0, mstatus, t0
 
     // Set exception return register to PC
     ld t0,  0(sp)

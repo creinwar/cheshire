@@ -4,15 +4,6 @@ rv64_vm_m_handler:
     sd t0, -8(sp)
     sd t1, -16(sp)    
 
-    li t0, 1
-    slli t0, t0, 63
-    addi t0, t0, 7
-    csrrs t1, mcause, x0
-    xor t0, t0, t1
-
-    // If this is not a machine mode timer interrupt we have to check for an ecall
-    bne t0, x0, m_mode_check_ecall
-
     // Set mtimecmphigh to the max
     li t0, -1
     li t1, 2
@@ -25,6 +16,15 @@ rv64_vm_m_handler:
     sw t0, 0(t1)
 
     fence
+
+    li t0, 1
+    slli t0, t0, 63
+    addi t0, t0, 7
+    csrrs t1, mcause, x0
+    xor t0, t0, t1
+
+    // If this is not a machine mode timer interrupt we have to check for an ecall
+    bne t0, x0, m_mode_check_ecall
 
     // Forward the timer interrupt to HS mode
     li t0, 1
@@ -82,10 +82,12 @@ m_mode_drop_s:
 m_mode_check_ecall:
     // Assuming t1 contains mcause
     // Range from 8-11 are ecalls, we service all of them
+    // From 20-23 are guest page and virtual instruction faults
+    // which we also forward
     li t0, 8
     blt t1, t0, m_mode_death
     li t0, 12
-    bge t1, t0, m_mode_death
+    bge t1, t0, m_mode_check_guest
 
     // ECALL 13 is the mhpmcounter read
     li t0, 13
@@ -97,6 +99,42 @@ m_mode_check_ecall:
     csrrs t0, mepc, x0
     addi t0, t0, 4
     csrrw x0, mepc, t0
+
+    jal x0, m_mode_exit
+
+m_mode_check_guest:
+    // Assuming t1 contains mcause
+    li t0, 20   // Instruction page fault
+    blt t1, t0, m_mode_death
+    li t0, 24   // 1 post guest store page fault
+    bge t1, t0, m_mode_death
+
+    // Just forward the exception to HS mode
+    csrrw x0, scause, t1
+    csrrs t0, mepc, x0
+    csrrw x0, sepc, t0
+
+    csrrs t0, mtval, x0
+    csrrw x0, stval, t0
+
+    // "Return" to HS handler
+    csrrs t0, stvec, x0
+    csrrw x0, mepc, t0
+
+    // Update sstatus SIE, SPIE and SPP
+    csrrs t0, sstatus, x0
+    andi t0, t0, 2
+    csrrc x0, sstatus, t0
+    slli t0, t0, 3
+    csrrs x0, sstatus, t0
+
+    csrrs t0, mstatus, x0
+    srli t0, t0, 11
+    andi t0, t0, 1
+    beq t0, x0, m_mode_u_pp
+    slli t0, t0, 8
+    csrrs x0, sstatus, t0
+    jal x0, m_mode_drop_s
 
 m_mode_exit:
 
@@ -119,6 +157,11 @@ m_mode_death:
 //      Cry and do nothing :(
 .align 8
 rv64_vm_hs_handler:
+
+    // Switch to the hypervisor colour
+    // The current colour is automatically saved
+    csrrw x0, 0x5C0, 1
+
     // Make space for the I-Regs, FP-Regs and CSRs
     addi sp, sp, -576
     sd ra, 8(sp)
@@ -169,7 +212,8 @@ rv64_vm_hs_handler:
     addi a1, a0, 264
 
     // Save current partitioning colour
-    csrrs t0, 0x5C0, x0
+    // from the last colour register (we switched above)
+    csrrs t0, 0x5C1, x0
     sd t0, 0(a1)
 
     // Save hstatus
@@ -192,12 +236,6 @@ rv64_vm_hs_handler:
     csrrs t0, scause, x0
     add t1, t0, x0
 
-    // Check highest bit => If it's set, this was an interrupt
-    // Otherwise an exception
-    srli t0, t0, 63
-    beq t0, x0, we_dead
-
-intr:
     // Get rid of the top bit
     slli t1, t1, 1
     
@@ -205,8 +243,20 @@ intr:
     // Shifted once to the left => 10
     addi t0, x0, 10
 
-    // If it was no timer interrupt, we're done
-    bne t0, t1, we_dead
+    // If it was no timer interrupt, we have to check for guest faults
+    beq t0, t1, cont_save
+
+    csrrs t1, scause, x0
+
+    // The guest page faults and virtual instruction faults are
+    // between 20 - 23
+    addi t0, x0, 20
+    blt t1, t0, we_dead
+
+    addi t0, t0, 4
+    bge t1, t0, we_dead
+
+    addi s0, x0, 69
 
 cont_save:
 
@@ -262,6 +312,9 @@ fp_saved:
     ld t1, 0(t0)
     sd sp, 8(t1)
 
+    addi s0, s0, -69
+    beq s0, x0, guest_fault
+
     // Call trace utility to read out metrics if needed
     //jal ra, vm_trace
 
@@ -278,6 +331,16 @@ fp_saved:
     // Switch the stack pointer to the new one
     ld sp, 8(a0)
 
+    jal x0, restore
+
+
+guest_fault:
+
+    add a0, sp, x0
+
+    jal ra, vm_handle_guest_fault
+
+restore:
     // Set next time slice interrupt
     jal ra, vm_set_timer
 
@@ -291,9 +354,9 @@ fp_saved:
     ld t1, 0(sp)
     csrrw x0, sepc, t1
 
-    // Set current partitioning colour
+    // Set last partitioning colour (will be restored later)
     ld t0, 0(a1)
-    csrrw x0, 0x5C0, t0
+    csrrw x0, 0x5C1, t0
 
     // Restore hstatus
     ld t1, 24(a1)
@@ -391,6 +454,9 @@ fp_restored:
 
     // Restore a0
     ld sp,   16(sp)
+
+    // Trigger a colour restore (last -> current)
+    csrrwi x0, 0x5C2, 1
 
     sret
 
