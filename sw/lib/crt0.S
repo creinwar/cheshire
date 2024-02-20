@@ -34,10 +34,13 @@ _start:
 1:  .option pop
 
     // Store existing stack, global, return pointers on new stack
-    addi sp, sp, -24
+    // Also save thread pointer for good measure (and to maintain
+    // 16 byte alignment)
+    addi sp, sp, -32
     sd t1, 0(sp)
     sd gp, 8(sp)
     sd ra, 16(sp)
+    sd tp, 24(sp)
 
     // Set trap vector
     la t0, _trap_handler_wrap
@@ -119,6 +122,7 @@ _fp_init:
 .global _exit
 _exit:
     // Restore the original context registers (sp last)
+    ld tp, 24(sp)
     ld ra, 16(sp)
     ld gp, 8(sp)
     ld sp, 0(sp)

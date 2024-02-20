@@ -22,6 +22,16 @@
     device_type = "memory";
     reg = <0x0 0x80000000 0x0 0x40000000>;
   };
+  // DSPM
+  memory@1800000 {
+    device_type = "memory";
+    reg = <0x0 0x01800000 0x0 0x00004000>;
+  };
+  // ISPM
+  memory@1A00000 {
+    device_type = "memory";
+    reg = <0x0 0x01A00000 0x0 0x00002000>;
+  };
   cpus {
     #address-cells = <1>;
     #size-cells = <0>;

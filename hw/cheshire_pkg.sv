@@ -282,6 +282,8 @@ package cheshire_pkg;
   localparam doub_bt AmTagger = 'h0300_A000;
   localparam doub_bt AmSpm    = 'h1000_0000;  // Cached region at bottom, uncached on top
   localparam doub_bt AmClic   = 'h0800_0000;
+  localparam doub_bt AmDSpm   = 'h0180_0000;  // D$ SPM;
+  localparam doub_bt AmISpm   = 'h01A0_0000;  // I$ SPM
 
   // Static masks
   localparam doub_bt AmSpmBaseUncached = 'h1400_0000;
@@ -490,14 +492,18 @@ package cheshire_pkg;
       NrNonIdempotentRules  : 2,   // Periphs, ExtNonCIE
       NonIdempotentAddrBase : {64'h0000_0000, NoCieBase},
       NonIdempotentLength   : {64'h1000_0000, 64'h6000_0000 - cfg.Cva6ExtCieLength},
-      NrExecuteRegionRules  : 5,   // Debug, Bootrom, AllSPM, LLCOut, ExtCIE
-      ExecuteRegionAddrBase : {AmDbg, AmBrom, AmSpm, cfg.LlcOutRegionStart, CieBase},
-      ExecuteRegionLength   : {64'h40000, 64'h40000, 2*SizeSpm, SizeLlcOut, cfg.Cva6ExtCieLength},
+      NrExecuteRegionRules  : 6,   // Debug, Bootrom, I$-SPM, AllSPM, LLCOut, ExtCIE
+      ExecuteRegionAddrBase : {AmDbg, AmBrom, AmISpm, AmSpm, cfg.LlcOutRegionStart, CieBase},
+      ExecuteRegionLength   : {64'h40000, 64'h40000, 64'h20_0000, 2*SizeSpm, SizeLlcOut, cfg.Cva6ExtCieLength},
       NrCachedRegionRules   : 3,   // CachedSPM, LLCOut, ExtCIE
       CachedRegionAddrBase  : {AmSpm,   cfg.LlcOutRegionStart,  CieBase},
       CachedRegionLength    : {SizeSpm, SizeLlcOut,             cfg.Cva6ExtCieLength},
       AxiCompliant          : 1,
       SwapEndianess         : 0,
+      DCacheSpmAddrBase     : AmDSpm[55:0],
+      DCacheSpmLength       : 56'h0020_0000,
+      ICacheSpmAddrBase     : AmISpm[55:0],
+      ICacheSpmLength       : 56'h0020_0000,
       CLICNumInterruptSrc   : NumCoreIrqs + NumIntIntrs + cfg.NumExtClicIntrs,
       CLICIntCtlBits        : cfg.ClicIntCtlBits,
       DmBaseAddress         : AmDbg,
@@ -566,7 +572,7 @@ package cheshire_pkg;
     Dma               : 1,
     SerialLink        : 1,
     Vga               : 1,
-    AxiRt             : 0,
+    AxiRt             : 1,
     Clic              : 0,
     IrqRouter         : 0,
     BusErr            : 1,
